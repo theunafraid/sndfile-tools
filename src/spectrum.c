@@ -16,7 +16,7 @@
 
 spectrum *
 create_spectrum (int speclen, enum WINDOW_FUNCTION window_function)
-{	spectrum *spec ;
+{	spectrum *spec = NULL;
 
 	spec = calloc (1, sizeof (spectrum)) ;
 	if (spec == NULL)
@@ -43,7 +43,7 @@ create_spectrum (int speclen, enum WINDOW_FUNCTION window_function)
 		exit (1) ;
 		} ;
 
-	spec->plan = fftw_plan_r2r_1d (2 * speclen, spec->time_domain, spec->freq_domain, FFTW_R2HC, FFTW_MEASURE | FFTW_PRESERVE_INPUT) ;
+	spec->plan = fftw_plan_r2r_1d (2 * speclen, spec->time_domain, spec->freq_domain, FFTW_R2HC, FFTW_ESTIMATE | FFTW_DESTROY_INPUT);//FFTW_MEASURE | FFTW_PRESERVE_INPUT) ;
 	if (spec->plan == NULL)
 	{	printf ("%s:%d : fftw create plan failed.\n", __func__, __LINE__) ;
 		free (spec) ;

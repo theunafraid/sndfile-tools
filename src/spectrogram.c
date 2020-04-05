@@ -26,12 +26,14 @@
 **      - Better cmdline arg parsing and flexibility.
 */
 
+#include "spectrogram.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
 #include <math.h>
 #include <limits.h>
 #include <assert.h>
+#include <time.h>
 
 #include <cairo.h>
 #include <fftw3.h>
@@ -55,15 +57,6 @@
 
 #define	SPEC_FLOOR_DB		-180.0
 
-
-typedef struct
-{	const char *sndfilepath, *pngfilepath, *filename ;
-	int width, height ;
-	bool border, log_freq, gray_scale ;
-	double min_freq, max_freq, fft_freq ;
-	enum WINDOW_FUNCTION window_function ;
-	double spec_floor_db ;
-} RENDER ;
 
 typedef struct
 {	int left, top, width, height ;
@@ -150,11 +143,15 @@ get_colour_map_value (float value, double spec_floor_db, unsigned char colour [3
 static void
 read_mono_audio (SNDFILE * file, sf_count_t filelen, double * data, int datalen, int indx, int total)
 {
+	//printf("FRAMES : %d SPECLEN*2 : %d INDEX : %d WIDTH : %d\n", filelen, datalen, indx, total);
+
 	sf_count_t start ;
 
 	memset (data, 0, datalen * sizeof (data [0])) ;
 
 	start = (indx * filelen) / total - datalen / 2 ;
+
+	//printf("START : %d\n", start);
 
 	if (start >= 0)
 		sf_seek (file, start, SEEK_SET) ;
@@ -164,6 +161,8 @@ read_mono_audio (SNDFILE * file, sf_count_t filelen, double * data, int datalen,
 		data += start ;
 		datalen -= start ;
 		} ;
+
+	//printf("READ DATALEN : %d\n",datalen);
 
 	sfx_mix_mono_read_double (file, data, datalen) ;
 
@@ -920,6 +919,8 @@ render_sndfile (RENDER * render)
 		exit (1) ;
 		} ;
 
+	printf("SAMPLERATE : %d FRAMES : %d\n", info.samplerate, info.frames);
+
 	render_cairo_surface (render, infile, info.samplerate, info.frames) ;
 
 	sf_close (infile) ;
@@ -964,6 +965,312 @@ usage_exit (const char * argv0, int error)
 
 	exit (error) ;
 } /* usage_exit */
+
+static int
+initialize_cairo_surface(
+	const RENDER* render,
+	cairo_surface_t** surface
+)
+{
+	cairo_status_t status ;
+
+	/*
+	**	CAIRO_FORMAT_RGB24 	 each pixel is a 32-bit quantity, with the upper 8 bits
+	**	unused. Red, Green, and Blue are stored in the remaining 24 bits in that order.
+	*/
+
+	fprintf(stdout, "Creating surface : %d %d\n", render->width, render->height);
+
+	*surface = cairo_image_surface_create (CAIRO_FORMAT_RGB24, render->width, render->height) ;
+	if (*surface == NULL || cairo_surface_status (*surface) != CAIRO_STATUS_SUCCESS)
+	{
+		status = cairo_surface_status (*surface);
+		printf ("Error while creating surface : %s\n", cairo_status_to_string (status)) ;
+		return -1;
+	}
+
+	cairo_surface_flush(*surface);
+
+	return 0;
+}
+
+void read_timedomain_data(
+	const double* timeDomainSamples,
+	const int samplesSize,
+	double* data,
+	int datalen,
+	int indx,
+	int total
+)
+{
+	int start ;
+
+	memset (data, 0, datalen * sizeof (data [0])) ;
+
+	start = (indx * samplesSize) / total - datalen / 2 ;
+
+	int offsetRead = 0, offsetWrite = 0;
+
+	if (start >= 0)
+	{
+		offsetRead = start;
+	}
+	else
+	{
+		start = -start ;
+		offsetWrite += start;
+		datalen -= start ;
+		offsetRead = 0;
+	}
+
+	for (int i =0; i < datalen; ++i)
+	{
+		data[offsetWrite + i] = timeDomainSamples[offsetRead + i];
+	}
+}
+
+int render_bitmap_to_surface(
+	const RENDER* render,
+	const double* timeDomainSamples,
+	const int samplesSize,
+	const int sampleRate,
+	cairo_surface_t* surface
+)
+{
+	float ** mag_spec = NULL ; // Indexed by [w][h]
+
+	spectrum *spec ;
+	double max_mag = 0.0 ;
+	int width, height, w, speclen, samplerate;
+
+	samplerate = sampleRate;
+
+	width = render->width ;
+	height = render->height ;
+
+	if (width < 1 || height < 1)
+	{
+		printf("Invalid width or height specified!\n");
+		return -1;
+	}
+
+	/*
+	** Choose a speclen value, the spectrum length.
+	** The FFT window size is twice this.
+	*/
+	if (render->fft_freq != 0.0)
+		/* Choose an FFT window size of 1/fft_freq seconds of audio */
+		speclen = (samplerate / render->fft_freq + 1) / 2 ;
+	else
+		/* Long enough to represent frequencies down to 20Hz. */
+		speclen = height * (samplerate / 20 / height + 1) ;
+
+	/* Find the nearest fast value for the FFT size. */
+	{
+		int d ;	/* difference */
+
+		for (d = 0 ; /* Will terminate */ ; d++)
+		{
+			/* Logarithmically, the integer above is closer than
+			** the integer below, so prefer it to the one below.
+			*/
+			if (is_good_speclen (speclen + d))
+			{
+				speclen += d ;
+				break ;
+			}
+			/* FFT length must also be >= the output height,
+			** otherwise repeated pixel rows occur in the output.
+			*/
+			if (speclen - d >= height && is_good_speclen (speclen - d))
+			{
+				speclen -= d ;
+				break ;
+			}
+		}
+	}
+
+	mag_spec = calloc (width, sizeof (float *)) ;
+	if (mag_spec == NULL)
+	{
+		printf ("%s : Not enough memory.\n", __func__) ;
+		return -1;
+	}
+
+	for (w = 0 ; w < width ; w++)
+	{
+		if ((mag_spec [w] = calloc (height, sizeof (float))) == NULL)
+		{
+			printf ("%s : Not enough memory.\n", __func__) ;
+			return -1;
+		}
+	} ;
+
+	spec = create_spectrum (speclen, render->window_function) ;
+
+	if (spec == NULL)
+	{
+		printf ("%s : line %d : create plan failed.\n", __FILE__, __LINE__) ;
+		return -1;
+	}
+
+	for (w = 0 ; w < width ; w++)
+	{
+		double single_max ;
+
+		// read timedomain
+		read_timedomain_data(
+			timeDomainSamples,	// all audio data
+			samplesSize, // audio frames
+			spec->time_domain, // output
+			2 * speclen, // spectrogram data len
+			w, // spectrogram index
+			width); // spectrogram width
+
+		single_max = calc_magnitude_spectrum (spec) ;
+
+		// fprintf(stdout, " w %d : single_max %f\n", w, single_max);
+
+		max_mag = MAX (max_mag, single_max) ;
+
+		interp_spec (mag_spec [w], height, spec->mag_spec, speclen, render, samplerate) ;
+	}
+
+	// fprintf(stdout, "max_mag %f\n", max_mag);
+
+	// render spectrogram
+	render_spectrogram (surface, render->spec_floor_db, mag_spec, max_mag, 0, 0, width, height, render->gray_scale) ;
+
+	// cleanup
+	destroy_spectrum(spec);
+
+	for (w = 0 ; w < width ; w++)
+		free (mag_spec [w]) ;
+	free (mag_spec) ;
+
+
+	return 0;
+}
+
+// static RENDER render =
+// 	{
+// 		NULL, NULL, NULL,
+// 		0, 0,		/* width, height */
+// 		false, false, false, /* border, log_freq, gray_scale */
+// 		0.0, 8000.0, 0.0,		/* {min,max,fft}_freq */
+// 		HANN,
+// 		-1.0 * 80.0,
+// 		NULL
+// 	};
+
+// static 	cairo_surface_t* surface = NULL;
+
+int init_spectrogram(RENDER* render)
+{
+
+	if (render == NULL)
+	{
+		fprintf(stderr, "render NULL\n");
+		return -1;
+	}
+
+	memset(render, 0, sizeof(RENDER));
+
+	render->max_freq = 8000.0;
+	render->window_function = HANN;
+	render->spec_floor_db = -1.0 * 80.0;
+
+	return 0;
+}
+
+int render_spectrogram_bitmap(
+    const double* timeDomainSamples,
+    const int samplesSize,
+	const int sampleRate,
+    unsigned char** bitmapData,
+    const unsigned int width,
+    const unsigned int height,
+	RENDER* render
+)
+{
+	struct timespec start_ts;
+	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start_ts);
+
+	render->width = width;
+	render->height = height;
+
+	if (render->ctxdata == NULL)
+	{
+
+		if (0 != initialize_cairo_surface(
+			render,
+			&render->ctxdata
+		))
+		{
+			fprintf(stderr, "Failed to initialize surface!\n");
+			return -1;
+		}
+	}
+
+	cairo_surface_t* surface = (cairo_surface_t*) render->ctxdata;
+
+	if (0 != render_bitmap_to_surface(
+		render,
+		timeDomainSamples,
+		samplesSize,
+		sampleRate,
+		surface
+	))
+	{
+
+		return -1;
+	}
+
+	struct timespec end_ts;
+	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &end_ts);
+
+	double posix_dur = 1000.0*end_ts.tv_sec + 1e-6*end_ts.tv_nsec
+						- (1000.0*start_ts.tv_sec + 1e-6*start_ts.tv_nsec);
+
+	printf("CPU time used (per clock_gettime()): %.2f ms\n", posix_dur);
+
+	// CAIRO_FORMAT_RGB24, 32bit used
+
+	// 	stride = cairo_image_surface_get_stride (surface) ;
+
+	// data = cairo_image_surface_get_data (surface) ;
+	// memset (data, 0, stride * cairo_image_surface_get_height (surface)) ;
+
+	*bitmapData = cairo_image_surface_get_data(surface);
+
+	static int pngcount = 0;
+
+	cairo_status_t status ;
+
+	const char path[256];
+
+	memset(path, 0, sizeof(path));
+
+	pngcount++;
+
+	if (pngcount < 500)
+	{
+	sprintf(path, "./spectro_%d.png", pngcount);
+
+	status = cairo_surface_write_to_png (surface, path) ;
+
+	if ( cairo_surface_status(surface) != CAIRO_STATUS_SUCCESS )
+	{
+		fprintf(stderr, "Failed to write png!\n");
+	}
+	}
+
+	// cairo_surface_destroy(surface);
+
+	return 0;
+}
+
+#ifndef SPECTROGRAM_LIB
 
 int
 main (int argc, char * argv [])
@@ -1067,3 +1374,5 @@ main (int argc, char * argv [])
 
 	return 0 ;
 } /* main */
+
+#endif

@@ -15,6 +15,8 @@
 ** along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+#ifndef _COMMON_H_
+#define _COMMON_H_
 
 #include <sndfile.h>
 
@@ -56,3 +58,5 @@ sf_count_t sfx_mix_mono_read_double (SNDFILE * file, double * data, sf_count_t d
 int parse_int_or_die (const char * input, const char * value_name) ;
 
 double parse_double_or_die (const char * input, const char * value_name) ;
+
+#endif
