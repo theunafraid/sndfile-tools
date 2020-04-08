@@ -1136,7 +1136,7 @@ int render_bitmap_to_surface(
 		interp_spec (mag_spec [w], height, spec->mag_spec, speclen, render, samplerate) ;
 	}
 
-	// fprintf(stdout, "max_mag %f\n", max_mag);
+	// fprintf(stdout, "png : %s, max_mag %f\n", render->pngfilepath, max_mag);
 
 	// render spectrogram
 	render_spectrogram (surface, render->spec_floor_db, mag_spec, max_mag, 0, 0, width, height, render->gray_scale) ;
@@ -1178,9 +1178,16 @@ int init_spectrogram(RENDER* render)
 
 	render->max_freq = 8000.0;
 	render->window_function = HANN;
-	render->spec_floor_db = -1.0 * 80.0;
+	render->spec_floor_db =-1.0 * 80.0;
 
 	return 0;
+}
+
+void deinit_spectrogram(RENDER* render)
+{
+	cairo_surface_t* surface = (cairo_surface_t*)render->ctxdata;
+
+	cairo_surface_destroy(surface);
 }
 
 int render_spectrogram_bitmap(
@@ -1222,7 +1229,6 @@ int render_spectrogram_bitmap(
 		surface
 	))
 	{
-
 		return -1;
 	}
 
@@ -1232,40 +1238,21 @@ int render_spectrogram_bitmap(
 	double posix_dur = 1000.0*end_ts.tv_sec + 1e-6*end_ts.tv_nsec
 						- (1000.0*start_ts.tv_sec + 1e-6*start_ts.tv_nsec);
 
-	printf("CPU time used (per clock_gettime()): %.2f ms\n", posix_dur);
-
-	// CAIRO_FORMAT_RGB24, 32bit used
-
-	// 	stride = cairo_image_surface_get_stride (surface) ;
-
-	// data = cairo_image_surface_get_data (surface) ;
-	// memset (data, 0, stride * cairo_image_surface_get_height (surface)) ;
+	// printf("CPU time used (per clock_gettime()): %.2f ms\n", posix_dur);
 
 	*bitmapData = cairo_image_surface_get_data(surface);
 
-	static int pngcount = 0;
+	cairo_status_t status;
 
-	cairo_status_t status ;
-
-	const char path[256];
-
-	memset(path, 0, sizeof(path));
-
-	pngcount++;
-
-	if (pngcount < 500)
+	if (render->pngfilepath)
 	{
-	sprintf(path, "./spectro_%d.png", pngcount);
+		status = cairo_surface_write_to_png (surface, render->pngfilepath) ;
 
-	status = cairo_surface_write_to_png (surface, path) ;
-
-	if ( cairo_surface_status(surface) != CAIRO_STATUS_SUCCESS )
-	{
-		fprintf(stderr, "Failed to write png!\n");
+		if ( cairo_surface_status(surface) != CAIRO_STATUS_SUCCESS )
+		{
+			fprintf(stderr, "Failed to write png!\n");
+		}
 	}
-	}
-
-	// cairo_surface_destroy(surface);
 
 	return 0;
 }

@@ -29,6 +29,8 @@ int render_spectrogram_bitmap(
     RENDER* render
 );
 
+void deinit_spectrogram(RENDER*);
+
 #ifdef __cplusplus
 }
 #endif

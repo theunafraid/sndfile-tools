@@ -12,8 +12,6 @@
 #include "window.h"
 #include "spectrum.h"
 
-
-
 spectrum *
 create_spectrum (int speclen, enum WINDOW_FUNCTION window_function)
 {	spectrum *spec = NULL;
