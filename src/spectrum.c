@@ -84,6 +84,12 @@ destroy_spectrum (spectrum * spec)
 double
 calc_magnitude_spectrum (spectrum * spec)
 {
+	return calc_magnitude_spectrum_max_min(spec, NULL);
+}
+
+double
+calc_magnitude_spectrum_max_min (spectrum * spec, double* min)
+{
 	double max ;
 	int k, freqlen ;
 
@@ -102,12 +108,17 @@ calc_magnitude_spectrum (spectrum * spec)
 	**/
 	max = spec->mag_spec [0] = fabs (spec->freq_domain [0]) ;
 
+	if (min) { *min = 0; }
+
 	for (k = 1 ; k < spec->speclen ; k++)
 	{	double re = spec->freq_domain [k] ;
 		double im = spec->freq_domain [freqlen - k] ;
-		spec->mag_spec [k] = sqrt (re * re + im * im) ;
+		double mag_value = re * re + im * im;
+		spec->mag_spec [k] = sqrt ( mag_value ) ;
 		max = MAX (max, spec->mag_spec [k]) ;
-		} ;
+		if (min) { *min = MIN(*min, spec->mag_spec[k]); }
+	};
+
 	/* Lastly add the point for the Nyquist frequency */
 	spec->mag_spec [spec->speclen] = fabs (spec->freq_domain [spec->speclen]) ;
 

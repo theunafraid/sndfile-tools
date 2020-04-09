@@ -18,3 +18,5 @@ spectrum * create_spectrum (int speclen, enum WINDOW_FUNCTION window_function) ;
 void destroy_spectrum (spectrum * spec) ;
 
 double calc_magnitude_spectrum (spectrum * spec) ;
+
+double calc_magnitude_spectrum_max_min (spectrum * spec, double* min) ;

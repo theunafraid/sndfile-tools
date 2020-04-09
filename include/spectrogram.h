@@ -26,7 +26,8 @@ int render_spectrogram_bitmap(
     unsigned char** bitmapData,
     const unsigned int width,
     const unsigned int height,
-    RENDER* render
+    RENDER* render,
+    double triggerRender
 );
 
 void deinit_spectrogram(RENDER*);

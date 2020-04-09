@@ -57,6 +57,7 @@
 
 #define	SPEC_FLOOR_DB		-180.0
 
+#define MAX_DB				50.0
 
 typedef struct
 {	int left, top, width, height ;
@@ -190,6 +191,8 @@ render_spectrogram (cairo_surface_t * surface, double spec_floor_db, float **mag
 
 			mag2d [w][h] = mag2d [w][h] / maxval ;
 			mag2d [w][h] = (mag2d [w][h] < linear_spec_floor) ? spec_floor_db : 20.0 * log10 (mag2d [w][h]) ;
+
+			// printf("%d %d : %f\n", w , h, mag2d[w][h]);
 
 			get_colour_map_value (mag2d [w][h], spec_floor_db, colour, gray_scale) ;
 
@@ -692,7 +695,7 @@ interp_spec (float * mag, int maglen, const double *spec, int speclen, const REN
 				} ;
 
 			mag [k] = sum / count ;
-			}
+		}
 		else
 		/* The output indices are more densely packed than the input indices
 		** so interpolate between input values to generate more output values.
@@ -700,8 +703,13 @@ interp_spec (float * mag, int maglen, const double *spec, int speclen, const REN
 		{	/* Take a weighted average of the nearest values */
 			mag [k] = spec [(int) this] * (1.0 - (this - floor (this)))
 						+ spec [(int) this + 1] * (this - floor (this)) ;
-			} ;
 		} ;
+
+		if (isnan(mag[k]) == true || isinf(mag[k]) == true)
+		{
+			mag[k] = 0.0;
+		}
+	} ;
 
 	return ;
 } /* interp_spec */
@@ -1034,9 +1042,12 @@ int render_bitmap_to_surface(
 	const double* timeDomainSamples,
 	const int samplesSize,
 	const int sampleRate,
+	double triggerRender,
 	cairo_surface_t* surface
 )
 {
+	int ret = 1;
+
 	float ** mag_spec = NULL ; // Indexed by [w][h]
 
 	spectrum *spec ;
@@ -1114,9 +1125,12 @@ int render_bitmap_to_surface(
 		return -1;
 	}
 
+	double min_mag = 0;
+
 	for (w = 0 ; w < width ; w++)
 	{
-		double single_max ;
+		double single_max = 0;
+		double single_min = 0;
 
 		// read timedomain
 		read_timedomain_data(
@@ -1127,19 +1141,34 @@ int render_bitmap_to_surface(
 			w, // spectrogram index
 			width); // spectrogram width
 
-		single_max = calc_magnitude_spectrum (spec) ;
+		single_max = calc_magnitude_spectrum_max_min (spec, &single_min) ;
 
-		// fprintf(stdout, " w %d : single_max %f\n", w, single_max);
+		if (isnan(single_max) == false && isinf(single_max) == false)
+		{
+			max_mag = MAX (max_mag, single_max) ;
+		}
 
-		max_mag = MAX (max_mag, single_max) ;
+		if (isnan(single_min) == false && isinf(single_min) == false)
+		{
+			min_mag = MIN(min_mag, single_min);
+		}
 
 		interp_spec (mag_spec [w], height, spec->mag_spec, speclen, render, samplerate) ;
 	}
 
-	// fprintf(stdout, "png : %s, max_mag %f\n", render->pngfilepath, max_mag);
+	// printf("%f %f %f\n", max_mag, min_mag, triggerRender);
 
-	// render spectrogram
-	render_spectrogram (surface, render->spec_floor_db, mag_spec, max_mag, 0, 0, width, height, render->gray_scale) ;
+	// fprintf(stdout, "png : %s, max_mag %f min_mag %f\n", render->pngfilepath, max_mag, min_mag);
+
+	if (max_mag - min_mag >= triggerRender)
+	{
+		max_mag = pow( 10, ( MAX_DB / 20.0));
+
+		// render spectrogram
+		render_spectrogram (surface, render->spec_floor_db, mag_spec, max_mag, 0, 0, width, height, render->gray_scale) ;
+
+		ret = 0;
+	}
 
 	// cleanup
 	destroy_spectrum(spec);
@@ -1148,8 +1177,7 @@ int render_bitmap_to_surface(
 		free (mag_spec [w]) ;
 	free (mag_spec) ;
 
-
-	return 0;
+	return ret;
 }
 
 // static RENDER render =
@@ -1178,7 +1206,7 @@ int init_spectrogram(RENDER* render)
 
 	render->max_freq = 8000.0;
 	render->window_function = HANN;
-	render->spec_floor_db =-1.0 * 80.0;
+	render->spec_floor_db = -1.0 * 80.0;
 
 	return 0;
 }
@@ -1197,9 +1225,11 @@ int render_spectrogram_bitmap(
     unsigned char** bitmapData,
     const unsigned int width,
     const unsigned int height,
-	RENDER* render
+	RENDER* render,
+	double triggerRender
 )
 {
+	int ret = 0;
 	struct timespec start_ts;
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start_ts);
 
@@ -1221,36 +1251,36 @@ int render_spectrogram_bitmap(
 
 	cairo_surface_t* surface = (cairo_surface_t*) render->ctxdata;
 
-	if (0 != render_bitmap_to_surface(
+	ret = render_bitmap_to_surface(
 		render,
 		timeDomainSamples,
 		samplesSize,
 		sampleRate,
-		surface
-	))
+		triggerRender,
+		surface);
+
+	if (ret == 0)
 	{
-		return -1;
-	}
+		struct timespec end_ts;
+		clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &end_ts);
 
-	struct timespec end_ts;
-	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &end_ts);
+		double posix_dur = 1000.0*end_ts.tv_sec + 1e-6*end_ts.tv_nsec
+							- (1000.0*start_ts.tv_sec + 1e-6*start_ts.tv_nsec);
 
-	double posix_dur = 1000.0*end_ts.tv_sec + 1e-6*end_ts.tv_nsec
-						- (1000.0*start_ts.tv_sec + 1e-6*start_ts.tv_nsec);
+		// printf("CPU time used (per clock_gettime()): %.2f ms\n", posix_dur);
 
-	// printf("CPU time used (per clock_gettime()): %.2f ms\n", posix_dur);
+		*bitmapData = cairo_image_surface_get_data(surface);
 
-	*bitmapData = cairo_image_surface_get_data(surface);
+		cairo_status_t status;
 
-	cairo_status_t status;
-
-	if (render->pngfilepath)
-	{
-		status = cairo_surface_write_to_png (surface, render->pngfilepath) ;
-
-		if ( cairo_surface_status(surface) != CAIRO_STATUS_SUCCESS )
+		if (render->pngfilepath)
 		{
-			fprintf(stderr, "Failed to write png!\n");
+			status = cairo_surface_write_to_png (surface, render->pngfilepath) ;
+
+			if ( cairo_surface_status(surface) != CAIRO_STATUS_SUCCESS )
+			{
+				fprintf(stderr, "Failed to write png!\n");
+			}
 		}
 	}
 
