@@ -15,6 +15,7 @@ typedef struct
 	enum WINDOW_FUNCTION window_function ;
 	double spec_floor_db ;
     void* ctxdata;
+    long long time_stamp;
 } RENDER ;
 
 int init_spectrogram(RENDER*);
@@ -28,6 +29,12 @@ int render_spectrogram_bitmap(
     const unsigned int height,
     RENDER* render,
     double triggerRender
+);
+
+unsigned char* get_spectrogram_buffer(
+    RENDER* render,
+    unsigned int* width,
+    unsigned int* height
 );
 
 void deinit_spectrogram(RENDER*);

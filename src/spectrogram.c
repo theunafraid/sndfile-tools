@@ -987,7 +987,7 @@ initialize_cairo_surface(
 	**	unused. Red, Green, and Blue are stored in the remaining 24 bits in that order.
 	*/
 
-	fprintf(stdout, "Creating surface : %d %d\n", render->width, render->height);
+	// fprintf(stdout, "Creating surface : %d %d\n", render->width, render->height);
 
 	*surface = cairo_image_surface_create (CAIRO_FORMAT_RGB24, render->width, render->height) ;
 	if (*surface == NULL || cairo_surface_status (*surface) != CAIRO_STATUS_SUCCESS)
@@ -1165,7 +1165,7 @@ int render_bitmap_to_surface(
 		max_mag = pow( 10, ( MAX_DB / 20.0));
 
 		// render spectrogram
-		render_spectrogram (surface, render->spec_floor_db, mag_spec, max_mag, 0, 0, width, height, render->gray_scale) ;
+		render_spectrogram (surface, render->spec_floor_db, mag_spec, max_mag, 0, 0, width, height, 1);//render->gray_scale) ;
 
 		ret = 0;
 	}
@@ -1207,7 +1207,7 @@ int init_spectrogram(RENDER* render)
 	render->max_freq = 8000.0;
 	render->window_function = HANN;
 	render->spec_floor_db = -1.0 * 80.0;
-
+	render->time_stamp = 0;
 	return 0;
 }
 
@@ -1269,8 +1269,6 @@ int render_spectrogram_bitmap(
 
 		// printf("CPU time used (per clock_gettime()): %.2f ms\n", posix_dur);
 
-		*bitmapData = cairo_image_surface_get_data(surface);
-
 		cairo_status_t status;
 
 		if (render->pngfilepath)
@@ -1284,7 +1282,26 @@ int render_spectrogram_bitmap(
 		}
 	}
 
-	return 0;
+	return ret;
+}
+
+unsigned char* get_spectrogram_buffer(
+	RENDER* render,
+    unsigned int* width,
+    unsigned int* height
+)
+{
+	cairo_surface_t* surface = (cairo_surface_t*)render->ctxdata;
+	unsigned char* ptr = NULL;
+
+	if (surface)
+	{
+		ptr = cairo_image_surface_get_data(surface);
+		*width = render->width;
+		*height = render->height;
+	}
+
+	return ptr;
 }
 
 #ifndef SPECTROGRAM_LIB
