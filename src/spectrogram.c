@@ -1288,11 +1288,16 @@ int render_spectrogram_bitmap(
 unsigned char* get_spectrogram_buffer(
 	RENDER* render,
     unsigned int* width,
-    unsigned int* height
+    unsigned int* height,
+	unsigned int *stride
 )
 {
 	cairo_surface_t* surface = (cairo_surface_t*)render->ctxdata;
 	unsigned char* ptr = NULL;
+
+	*stride = cairo_image_surface_get_stride(surface);
+
+	// fprintf(stdout , "stride : %d \n", *stride);
 
 	if (surface)
 	{

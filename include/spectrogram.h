@@ -34,7 +34,8 @@ int render_spectrogram_bitmap(
 unsigned char* get_spectrogram_buffer(
     RENDER* render,
     unsigned int* width,
-    unsigned int* height
+    unsigned int* height,
+    unsigned int* stride
 );
 
 void deinit_spectrogram(RENDER*);

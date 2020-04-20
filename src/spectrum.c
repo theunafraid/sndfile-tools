@@ -3,7 +3,7 @@
 #include <stdbool.h>
 #include <math.h>
 #include <limits.h>
-
+#include <sys/time.h>
 #include <fftw3.h>
 
 #include <sndfile.h>
@@ -98,7 +98,6 @@ calc_magnitude_spectrum_max_min (spectrum * spec, double* min)
 	if (spec->wfunc != RECTANGULAR)
 		for (k = 0 ; k < 2 * spec->speclen ; k++)
 			spec->time_domain [k] *= spec->window [k] ;
-
 
 	fftw_execute (spec->plan) ;
 
