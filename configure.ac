@@ -84,24 +84,6 @@ PKG_CHECK_MODULES([SAMPLERATE], [samplerate >= 0.1.5], [
 	])
 
 dnl ====================================================================================
-dnl  Check for libfftw3 which is required for src/sndfile-spectrogram.c).
-
-PKG_CHECK_MODULES([FFTW3], [fftw3 >= 0.15.0], [
-		AC_DEFINE([HAVE_FFTW3], [1], [Set to 1 if you have FFTW])
-	], [
-		AC_MSG_ERROR([FFTW could not be found!])
-	])
-
-dnl ====================================================================================
-dnl  Check for libcairo which is required for src/sndfile-spectrogram.c.
-
-PKG_CHECK_MODULES([CAIRO], [cairo >= 1.4.0], [
-		AC_DEFINE([HAVE_CAIRO], [1], [Set to 1 if you have Cairo])
-	], [
-		AC_MSG_ERROR([Cairo could not be found!])
-	])
-
-dnl ====================================================================================
 dnl  Check for JACK which is required for src/sndfile-jackplay.c.
 
 AS_IF([test "x$enable_jack" != "xno"], [
